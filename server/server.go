@@ -17,6 +17,14 @@ type Option struct {
 	CodecType   codec.CodecType `json:"codec_type"`
 }
 
+type OptionFunc func(option *Option)
+
+func WithCodecType(codecType codec.CodecType) OptionFunc {
+	return func(option *Option) {
+		option.CodecType = codecType
+	}
+}
+
 var DefaultOption = &Option{
 	MagicNumber: MagicNumber,
 	CodecType:   codec.CodecTypeGob,
@@ -77,6 +85,7 @@ func (s *Server) serveCodec(c codec.Codec) {
 			}
 			fmt.Println("readRequest err:", err)
 			// 发送错误消息
+			req.h.Error = err.Error()
 			s.sendResponse(c, req.h, invalidRequest, mu)
 			return
 		}
