@@ -2,11 +2,13 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/SnDragon/lrpc-go/codec"
 	"io"
 	"net"
 	"reflect"
+	"strings"
 	"sync"
 )
 
@@ -31,10 +33,40 @@ var DefaultOption = &Option{
 }
 
 type Server struct {
+	serviceMap sync.Map
 }
 
 func NewServer() *Server {
 	return &Server{}
+}
+
+func (s *Server) Register(rcvr interface{}) error {
+	service := newService(rcvr)
+	if _, existed := s.serviceMap.LoadOrStore(service.name, service); existed {
+		return errors.New("rpc: service already define:" + service.name)
+	}
+	return nil
+}
+
+func (s *Server) findService(serviceMethod string) (svr *service, m *methodType, err error) {
+	idx := strings.Index(serviceMethod, ".")
+	if idx <= 0 {
+		err = fmt.Errorf("server err: serviceMethod %s not found", serviceMethod)
+		return
+	}
+	svrName, methodName := serviceMethod[0:idx], serviceMethod[idx+1:]
+	svrInter, ok := s.serviceMap.Load(svrName)
+	if !ok {
+		err = fmt.Errorf("server err: service %s not found", svrName)
+		return
+	}
+	svr = svrInter.(*service)
+	m = svr.methods[methodName]
+	if m == nil {
+		err = fmt.Errorf("server err: method %s not found", methodName)
+		return
+	}
+	return
 }
 
 func (s *Server) Accept(lis net.Listener) error {
@@ -96,22 +128,29 @@ func (s *Server) serveCodec(c codec.Codec) {
 }
 
 type Request struct {
-	h           *codec.Header
-	argv, reply reflect.Value
+	h            *codec.Header
+	argv, replyv reflect.Value
+	svr          *service
+	mType        *methodType
 }
 
-func (s *Server) readRequest(c codec.Codec) (*Request, error) {
+func (s *Server) readRequest(c codec.Codec) (r *Request, err error) {
 	h := &codec.Header{}
 	if err := c.ReadHeader(h); err != nil {
 		fmt.Println("ReadHeader err:", err)
 		return nil, err
 	}
-	r := &Request{
+	r = &Request{
 		h: h,
 	}
-	// TODO
-	r.argv = reflect.New(reflect.TypeOf(""))
-	if err := c.ReadBody(r.argv.Interface()); err != nil {
+	r.svr, r.mType, err = s.findService(h.ServiceMethod)
+	r.argv = r.mType.newArgv()
+	r.replyv = r.mType.newReplyv()
+	argvi := r.argv.Interface()
+	if r.argv.Type().Kind() != reflect.Pointer {
+		argvi = r.argv.Addr().Interface()
+	}
+	if err := c.ReadBody(argvi); err != nil {
 		fmt.Println("ReadBody err:", err)
 		return nil, err
 	}
@@ -123,8 +162,12 @@ func (s *Server) handleRequest(c codec.Codec, req *Request, wg *sync.WaitGroup, 
 		wg.Done()
 	}()
 	fmt.Println(req.h, req.argv.Elem())
-	req.reply = reflect.ValueOf(fmt.Sprintf("geerpc resp %d", req.h.Seq))
-	return s.sendResponse(c, req.h, req.reply.Interface(), mu)
+	//req.replyv = reflect.ValueOf(fmt.Sprintf("geerpc resp %d", req.h.Seq))
+	// 通过反射调用对应服务等逻辑处理方法
+	if err := req.svr.call(req.mType, req.argv, req.replyv); err != nil {
+		return err
+	}
+	return s.sendResponse(c, req.h, req.replyv.Interface(), mu)
 }
 
 func (s *Server) sendResponse(c codec.Codec, h *codec.Header, body interface{}, mu *sync.Mutex) error {

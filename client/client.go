@@ -19,8 +19,8 @@ type Client struct {
 	mu       sync.Mutex
 	pending  map[uint64]*Call
 	seq      uint64
-	closing  bool
-	shutdown bool
+	closing  bool // 客户端主动关闭
+	shutdown bool // 出现错误被动关闭
 }
 
 var _ io.Closer = (*Client)(nil)

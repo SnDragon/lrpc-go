@@ -9,8 +9,22 @@ import (
 	"time"
 )
 
+type Foo int
+type Args struct {
+	Num1, Num2 int
+}
+
+func (f *Foo) Sum(args *Args, reply *int) error {
+	*reply = args.Num1 + args.Num2
+	return nil
+}
+
 func startServer(addr chan string) {
 	s := server.NewServer()
+	var foo Foo
+	if err := s.Register(&foo); err != nil {
+		panic("register err:" + err.Error())
+	}
 	lis, err := net.Listen("tcp", ":0")
 	if err != nil {
 		panic(err)
@@ -38,13 +52,14 @@ func main() {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			argv := fmt.Sprintf("rpc req:%d", i)
-			var reply string
-			if err := c.Call("RPC.Hello", argv, &reply); err != nil {
+			args := &Args{Num1: i, Num2: i * i}
+			var reply int
+			if err := c.Call("Foo.Sum", args, &reply); err != nil {
 				fmt.Println("Call err:", err)
 				return
 			}
-			fmt.Println("call reply:", reply)
+			//fmt.Println("call reply:", reply)
+			fmt.Printf("%d + %d = %d\n", args.Num1, args.Num2, reply)
 		}(i)
 	}
 	wg.Wait()
