@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/SnDragon/lrpc-go/client"
 	"github.com/SnDragon/lrpc-go/server"
@@ -54,7 +55,8 @@ func main() {
 			defer wg.Done()
 			args := &Args{Num1: i, Num2: i * i}
 			var reply int
-			if err := c.Call("Foo.Sum", args, &reply); err != nil {
+			ctx, _ := context.WithTimeout(context.Background(), time.Second)
+			if err := c.Call(ctx, "Foo.Sum", args, &reply); err != nil {
 				fmt.Println("Call err:", err)
 				return
 			}

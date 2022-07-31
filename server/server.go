@@ -10,13 +10,16 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 )
 
 const MagicNumber = 0x3bef5c
 
 type Option struct {
-	MagicNumber int             `json:"magic_number"`
-	CodecType   codec.CodecType `json:"codec_type"`
+	MagicNumber    int             `json:"magic_number"`
+	CodecType      codec.CodecType `json:"codec_type"`
+	ConnectTimeout time.Duration   `json:"connect_timeout"`
+	HandleTimeout  time.Duration   `json:"handle_timeout"`
 }
 
 type OptionFunc func(option *Option)
@@ -27,9 +30,22 @@ func WithCodecType(codecType codec.CodecType) OptionFunc {
 	}
 }
 
-var DefaultOption = &Option{
-	MagicNumber: MagicNumber,
-	CodecType:   codec.CodecTypeGob,
+func WithConnectTimeout(t time.Duration) OptionFunc {
+	return func(option *Option) {
+		option.ConnectTimeout = t
+	}
+}
+
+func WithHandleTimeout(t time.Duration) OptionFunc {
+	return func(option *Option) {
+		option.HandleTimeout = t
+	}
+}
+
+var DefaultOption = Option{
+	MagicNumber:    MagicNumber,
+	CodecType:      codec.CodecTypeGob,
+	ConnectTimeout: time.Second * 10,
 }
 
 type Server struct {
@@ -98,13 +114,13 @@ func (s *Server) ServeConn(conn net.Conn) {
 		fmt.Println("err:", fmt.Errorf("invalid codecType: %v", opt.CodecType))
 		return
 	}
-	s.serveCodec(f(conn))
+	s.serveCodec(f(conn), &opt)
 }
 
 // invalidRequest is a placeholder for response argv when error occurs
 var invalidRequest = struct{}{}
 
-func (s *Server) serveCodec(c codec.Codec) {
+func (s *Server) serveCodec(c codec.Codec, opt *Option) {
 	wg := &sync.WaitGroup{}
 	mu := &sync.Mutex{}
 	for {
@@ -122,7 +138,7 @@ func (s *Server) serveCodec(c codec.Codec) {
 			return
 		}
 		wg.Add(1)
-		go s.handleRequest(c, req, wg, mu)
+		go s.handleRequest(c, req, wg, mu, opt.HandleTimeout)
 	}
 	wg.Wait()
 }
@@ -157,17 +173,43 @@ func (s *Server) readRequest(c codec.Codec) (r *Request, err error) {
 	return r, nil
 }
 
-func (s *Server) handleRequest(c codec.Codec, req *Request, wg *sync.WaitGroup, mu *sync.Mutex) error {
-	defer func() {
-		wg.Done()
+func (s *Server) handleRequest(c codec.Codec, req *Request, wg *sync.WaitGroup, mu *sync.Mutex, timeout time.Duration) {
+	defer wg.Done()
+	called, sent, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	defer close(finished)
+	go func() {
+		// 通过反射调用对应服务等逻辑处理方法
+		err := req.svr.call(req.mType, req.argv, req.replyv)
+		select {
+		case <-finished:
+			close(called)
+			close(sent)
+			return
+		case called <- struct{}{}:
+			if err != nil {
+				req.h.Error = err.Error()
+				s.sendResponse(c, req.h, invalidRequest, mu)
+				sent <- struct{}{}
+				return
+			}
+			s.sendResponse(c, req.h, req.replyv.Interface(), mu)
+			sent <- struct{}{}
+		}
+
 	}()
-	fmt.Println(req.h, req.argv.Elem())
-	//req.replyv = reflect.ValueOf(fmt.Sprintf("geerpc resp %d", req.h.Seq))
-	// 通过反射调用对应服务等逻辑处理方法
-	if err := req.svr.call(req.mType, req.argv, req.replyv); err != nil {
-		return err
+	if timeout == 0 {
+		<-called
+		<-sent
+		return
 	}
-	return s.sendResponse(c, req.h, req.replyv.Interface(), mu)
+	select {
+	case <-time.After(timeout):
+		fmt.Println("rpc server: handle timeout")
+		req.h.Error = fmt.Sprintf("rpc server: request handle timeout: expect within %s", timeout)
+		s.sendResponse(c, req.h, invalidRequest, mu)
+	case <-called:
+		<-sent
+	}
 }
 
 func (s *Server) sendResponse(c codec.Codec, h *codec.Header, body interface{}, mu *sync.Mutex) error {
