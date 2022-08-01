@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"github.com/SnDragon/lrpc-go/registry"
 	"github.com/SnDragon/lrpc-go/server"
 	"github.com/SnDragon/lrpc-go/xclient"
 	"log"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -27,7 +28,14 @@ func (f *Foo) Sleep(args *Args, reply *int) error {
 	return nil
 }
 
-func startServer(addr chan string) {
+func startRegistry(wg *sync.WaitGroup) {
+	l, _ := net.Listen("tcp", ":9999")
+	registry.HandleHTTP()
+	wg.Done()
+	http.Serve(l, nil)
+}
+
+func startServer(registryAddr string, wg *sync.WaitGroup) {
 	s := server.NewServer()
 	var foo Foo
 	if err := s.Register(&foo); err != nil {
@@ -37,10 +45,8 @@ func startServer(addr chan string) {
 	if err != nil {
 		panic(err)
 	}
-	addr <- lis.Addr().String()
-	fmt.Println("server started at:", lis.Addr().String())
-	//s.HandleHTTP()
-	//_ = http.Serve(lis, nil)
+	registry.Heartbeat(registryAddr, "tcp@"+lis.Addr().String(), 0)
+	wg.Done()
 	if err := s.Accept(lis); err != nil {
 		panic(err)
 	}
@@ -62,8 +68,9 @@ func foo(xc *xclient.XClient, ctx context.Context, typ, serviceMethod string, ar
 	}
 }
 
-func call(addr1, addr2 string) {
-	d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
+func call(registry string) {
+	//d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
+	d := xclient.NewRegistryDiscovery(registry, 0)
 	xc := xclient.NewXClient(d, xclient.RandomSelect)
 	defer func() { _ = xc.Close() }()
 	// send request & receive response
@@ -78,8 +85,9 @@ func call(addr1, addr2 string) {
 	wg.Wait()
 }
 
-func broadcast(addr1, addr2 string) {
-	d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
+func broadcast(registry string) {
+	//d := xclient.NewMultiServerDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
+	d := xclient.NewRegistryDiscovery(registry, 0)
 	xc := xclient.NewXClient(d, xclient.RandomSelect)
 	defer func() { _ = xc.Close() }()
 	var wg sync.WaitGroup
@@ -97,46 +105,20 @@ func broadcast(addr1, addr2 string) {
 }
 
 func main() {
-	//addr := make(chan string)
-	//go startServer(addr)
-	//c, err := client.Dial("tcp", <-addr)
-	//c, err := client.DialHTTP("tcp", <-addr)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//defer func() {
-	//	_ = c.Close()
-	//}()
-	//time.Sleep(time.Second)
-	//var wg sync.WaitGroup
-	//for i := 0; i < 5; i++ {
-	//	wg.Add(1)
-	//	go func(i int) {
-	//		defer wg.Done()
-	//		args := &Args{Num1: i, Num2: i * i}
-	//		var reply int
-	//		ctx, _ := context.WithTimeout(context.Background(), time.Second)
-	//		if err := c.Call(ctx, "Foo.Sum", args, &reply); err != nil {
-	//			fmt.Println("Call err:", err)
-	//			return
-	//		}
-	//		//fmt.Println("call reply:", reply)
-	//		fmt.Printf("%d + %d = %d\n", args.Num1, args.Num2, reply)
-	//	}(i)
-	//}
-	//wg.Wait()
-	//time.Sleep(time.Minute * 10)
 	log.SetFlags(0)
-	ch1 := make(chan string)
-	ch2 := make(chan string)
-	// start two servers
-	go startServer(ch1)
-	go startServer(ch2)
-
-	addr1 := <-ch1
-	addr2 := <-ch2
+	registryAddr := "http://localhost:9999/_lrpc_/registry"
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go startRegistry(&wg)
+	wg.Wait()
 
 	time.Sleep(time.Second)
-	call(addr1, addr2)
-	broadcast(addr1, addr2)
+	wg.Add(2)
+	go startServer(registryAddr, &wg)
+	go startServer(registryAddr, &wg)
+	wg.Wait()
+
+	time.Sleep(time.Second)
+	call(registryAddr)
+	broadcast(registryAddr)
 }
