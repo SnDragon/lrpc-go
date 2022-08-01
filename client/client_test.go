@@ -26,16 +26,16 @@ func TestClient_dialTimeout(t *testing.T) {
 		return nil, nil
 	}
 	t.Run("timeout", func(t *testing.T) {
-		_, err := DiaTimeout(f, "tcp", l.Addr().String(), server.WithConnectTimeout(time.Second))
+		_, err := DialTimeout(f, "tcp", l.Addr().String(), server.WithConnectTimeout(time.Second))
 		_assert(err != nil && strings.Contains(err.Error(), "connect timeout"), "expect a timeout error")
 	})
 	t.Run("0", func(t *testing.T) {
-		_, err := DiaTimeout(f, "tcp", l.Addr().String(), server.WithConnectTimeout(0))
+		_, err := DialTimeout(f, "tcp", l.Addr().String(), server.WithConnectTimeout(0))
 		fmt.Println("err:", err)
 		_assert(err == nil, "0 means no limit")
 	})
 	t.Run("default", func(t *testing.T) {
-		_, err := DiaTimeout(f, "tcp", l.Addr().String())
+		_, err := DialTimeout(f, "tcp", l.Addr().String())
 		fmt.Println("err:", err)
 		_assert(err == nil, "0 means no limit")
 	})

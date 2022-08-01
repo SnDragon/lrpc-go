@@ -83,7 +83,7 @@ func (s *service) RegisterMethods() {
 			ArgType:   argType,
 			ReplyType: replyType,
 		}
-		fmt.Printf("rpc server : %s registered\n", s.name)
+		fmt.Printf("rpc server : %s:%s registered\n", s.name, method.Name)
 	}
 }
 

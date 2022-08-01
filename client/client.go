@@ -161,7 +161,7 @@ type clientResult struct {
 
 type newClientFunc func(conn net.Conn, opt *server.Option) (*Client, error)
 
-func DiaTimeout(f newClientFunc, network, address string, opts ...server.OptionFunc) (client *Client, err error) {
+func DialTimeout(f newClientFunc, network, address string, opts ...server.OptionFunc) (client *Client, err error) {
 	opt := server.DefaultOption
 	for _, optFunc := range opts {
 		optFunc(&opt)
@@ -196,7 +196,7 @@ func DiaTimeout(f newClientFunc, network, address string, opts ...server.OptionF
 }
 
 func Dial(network, address string, opts ...server.OptionFunc) (client *Client, err error) {
-	return DiaTimeout(NewClient, network, address, opts...)
+	return DialTimeout(NewClient, network, address, opts...)
 }
 
 func NewClient(conn net.Conn, opt *server.Option) (*Client, error) {
@@ -238,7 +238,7 @@ func NewHTTPClient(conn net.Conn, opt *server.Option) (*Client, error) {
 }
 
 func DialHTTP(network, address string, opts ...server.OptionFunc) (client *Client, err error) {
-	return DiaTimeout(NewHTTPClient, network, address, opts...)
+	return DialTimeout(NewHTTPClient, network, address, opts...)
 }
 
 // XDial calls different functions to connect to a RPC server
