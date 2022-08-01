@@ -6,6 +6,7 @@ import (
 	"github.com/SnDragon/lrpc-go/client"
 	"github.com/SnDragon/lrpc-go/server"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -32,15 +33,18 @@ func startServer(addr chan string) {
 	}
 	addr <- lis.Addr().String()
 	fmt.Println("server started at:", lis.Addr().String())
-	if err := s.Accept(lis); err != nil {
-		panic(err)
-	}
+	s.HandleHTTP()
+	_ = http.Serve(lis, nil)
+	//if err := s.Accept(lis); err != nil {
+	//	panic(err)
+	//}
 }
 
 func main() {
 	addr := make(chan string)
 	go startServer(addr)
-	c, err := client.Dial("tcp", <-addr)
+	//c, err := client.Dial("tcp", <-addr)
+	c, err := client.DialHTTP("tcp", <-addr)
 	if err != nil {
 		panic(err)
 	}
@@ -65,4 +69,5 @@ func main() {
 		}(i)
 	}
 	wg.Wait()
+	time.Sleep(time.Minute * 10)
 }

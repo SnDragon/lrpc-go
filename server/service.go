@@ -9,28 +9,28 @@ import (
 
 type methodType struct {
 	method    reflect.Method
-	argType   reflect.Type
-	replyType reflect.Type
-	numCall   uint64
+	ArgType   reflect.Type
+	ReplyType reflect.Type
+	NumCalls  uint64
 }
 
 func (m *methodType) newArgv() reflect.Value {
 	var argv reflect.Value
-	if m.argType.Kind() == reflect.Pointer {
-		argv = reflect.New(m.argType.Elem())
+	if m.ArgType.Kind() == reflect.Pointer {
+		argv = reflect.New(m.ArgType.Elem())
 	} else {
-		argv = reflect.New(m.argType).Elem()
+		argv = reflect.New(m.ArgType).Elem()
 	}
 	return argv
 }
 
 func (m *methodType) newReplyv() reflect.Value {
-	replyv := reflect.New(m.replyType.Elem())
-	switch m.replyType.Elem().Kind() {
+	replyv := reflect.New(m.ReplyType.Elem())
+	switch m.ReplyType.Elem().Kind() {
 	case reflect.Map:
-		replyv.Elem().Set(reflect.MakeMap(m.replyType.Elem()))
+		replyv.Elem().Set(reflect.MakeMap(m.ReplyType.Elem()))
 	case reflect.Slice:
-		replyv.Elem().Set(reflect.MakeSlice(m.replyType.Elem(), 0, 0))
+		replyv.Elem().Set(reflect.MakeSlice(m.ReplyType.Elem(), 0, 0))
 	}
 	return replyv
 }
@@ -80,15 +80,15 @@ func (s *service) RegisterMethods() {
 		}
 		s.methods[method.Name] = &methodType{
 			method:    method,
-			argType:   argType,
-			replyType: replyType,
+			ArgType:   argType,
+			ReplyType: replyType,
 		}
 		fmt.Printf("rpc server : %s registered\n", s.name)
 	}
 }
 
 func (s *service) call(m *methodType, args, reply reflect.Value) error {
-	atomic.AddUint64(&m.numCall, 1)
+	atomic.AddUint64(&m.NumCalls, 1)
 	f := m.method.Func
 	returnValues := f.Call([]reflect.Value{s.rcvr, args, reply})
 	if errInter := returnValues[0].Interface(); errInter != nil {
