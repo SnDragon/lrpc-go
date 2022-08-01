@@ -2,8 +2,9 @@ package client
 
 import (
 	"bufio"
+	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/SnDragon/lrpc-go/codec"
@@ -62,7 +63,7 @@ func (c *Client) registerCall(call *Call) (uint64, error) {
 
 func (c *Client) removeCall(seq uint64) *Call {
 	c.mu.Lock()
-	c.mu.Unlock()
+	defer c.mu.Unlock()
 	target := c.pending[seq]
 	delete(c.pending, seq)
 	return target
@@ -207,10 +208,17 @@ func NewClient(conn net.Conn, opt *server.Option) (*Client, error) {
 		return nil, err
 	}
 	// send option
-	if err := json.NewEncoder(conn).Encode(opt); err != nil {
-		fmt.Println("send opt err:", err)
-		return nil, err
-	}
+	// json.NewEncoder(conn).Encode(opt)
+	//conn.Write()
+
+	// 魔术方法
+	buf := bytes.NewBuffer([]byte{})
+	binary.Write(buf, binary.BigEndian, opt.MagicNumber)
+	conn.Write(buf.Bytes())
+	// codecType
+	buf = bytes.NewBuffer([]byte{})
+	binary.Write(buf, binary.BigEndian, uint32(opt.CodecType))
+	conn.Write(buf.Bytes())
 	return newClientCodec(f(conn), opt), nil
 }
 

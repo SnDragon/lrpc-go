@@ -1,7 +1,7 @@
 package server
 
 import (
-	"encoding/json"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/SnDragon/lrpc-go/codec"
@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const MagicNumber = 0x3bef5c
+const MagicNumber uint32 = 0x3bef5c
 
 const (
 	Connected        = "200 Connected to LRPC"
@@ -23,7 +23,7 @@ const (
 )
 
 type Option struct {
-	MagicNumber    int             `json:"magic_number"`
+	MagicNumber    uint32          `json:"magic_number"`
 	CodecType      codec.CodecType `json:"codec_type"`
 	ConnectTimeout time.Duration   `json:"connect_timeout"`
 	HandleTimeout  time.Duration   `json:"handle_timeout"`
@@ -107,10 +107,19 @@ func (s *Server) ServeConn(conn net.Conn) {
 		_ = conn.Close()
 	}()
 	var opt Option
-	if err := json.NewDecoder(conn).Decode(&opt); err != nil {
-		fmt.Println("ServeConn err:", err)
-		return
-	}
+	//if err := json.NewDecoder(conn).Decode(&opt); err != nil {
+	//	fmt.Println("ServeConn err:", err)
+	//	return
+	//}
+	var x uint32
+	binary.Read(conn, binary.BigEndian, &x)
+	fmt.Println("magicNumber:", x)
+	opt.MagicNumber = x
+	binary.Read(conn, binary.BigEndian, &x)
+	fmt.Println("codecType:", x)
+	opt.CodecType = codec.CodecType(x)
+	//opt.CodecType = codec.CodecTypeGob
+
 	// 校验option magicNumber,codec等
 	if opt.MagicNumber != MagicNumber {
 		fmt.Println("err:", fmt.Errorf("invalid magicNumber: %v", opt.MagicNumber))
